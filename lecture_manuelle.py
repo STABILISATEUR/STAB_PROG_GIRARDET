@@ -69,7 +69,7 @@ def findArucoID(inp_img):
 image = cv2.imread("aruco_fixed.png")
 
 if image is None:
-    print("Erreur : Impossible de lire l'image. Vérifiez le chemin et le fichier.")
+    print("Erreur :  Impossible de lire l'image. Vérifiez le chemin et le fichier.")
     exit()
 
 # Find the ArUco ID
