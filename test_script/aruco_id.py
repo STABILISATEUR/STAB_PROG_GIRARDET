@@ -34,11 +34,11 @@ try:
             print("Aucun marqueur détecté")
         
         cv2.imshow("Frame with ArUco markers", frame)
-        
+
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-        
+        time.sleep(0.1)
 
 finally:
     picam2.stop()
