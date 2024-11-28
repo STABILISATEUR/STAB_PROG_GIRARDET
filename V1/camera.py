@@ -1,7 +1,7 @@
 from picamera2 import Picamera2
 
 def initialiser_cam():
-	#Fonction initialisant la caméra et retournant l'objet Picamera2 configuré
+	#Fonction initialisant la caméra et retournant Picamera2 configuré
 	picam2 = Picamera2() 
 	preview_config = picam2.configure(picam2.create_video_configuration())
 	picam2.configure(preview_config)

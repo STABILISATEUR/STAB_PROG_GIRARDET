@@ -4,13 +4,13 @@ from camera import initialiser_cam, capture_frame, stop_camera
 from visu import afficher_visu, dessin_aruco, texte_sur_frame, fermer_visu
 from utils import recuperer_centre_marqueur
 
-# Initialisation de la caméra
+# Initialisation caméra
 picam2 = initialiser_cam()
 
-# Initialisation des paramètres ArUco
+# Paramètres ArUco
 aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_100)
 parameters = cv2.aruco.DetectorParameters_create()
-
+ 
 # FPS
 fps = 30
 delai = 1.0/fps
@@ -37,7 +37,7 @@ try:
             print("Marqueurs détectés : ", ids.flatten())
             centre = recuperer_centre_marqueur(corners)
             corners_array = corners[0]
-            pts = corners_array.reshape(-1, 4)
+            pts = corners_array.reshape(-1, 2)
             print("Position des coins du marqueur :")
             print(pts) 
             print("Centre du marqueur :", centre)  
@@ -48,7 +48,7 @@ try:
         cv2.imshow("Visualisation ArUco", frame)
 
         temps_passe = time.time() - temps_debut
-        time.sleep(max(0, delai - temps_passe))  # Ajuste le délai pour respecter le FPS cible
+        time.sleep(max(0, delai - temps_passe))  # Ajuste le délai pour respecter le FPS
 
      
 

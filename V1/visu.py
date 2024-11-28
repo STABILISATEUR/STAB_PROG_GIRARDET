@@ -6,7 +6,7 @@ def afficher_visu(nom_fenetre, frame):
 def dessin_aruco(frame, corners, ids):
     """
     Dessin des contours du marqueur
-	    Args:
+	    Entrees:
         frame (numpy.ndarray): Image sur laquelle dessiner les marqueurs.
         corners (numpy.ndarray): Coins des marqueurs détectés, 
             chaque élément contient 4 coordonnées (x, y).
@@ -28,7 +28,7 @@ def texte_sur_frame(frame, text, position, color=(255, 255, 255), font_scale=1, 
     """
     Ajoute du texte sur une image.
 
-    Entrée:
+    Entrees:
         frame : L'image sur laquelle écrire.
         text : texte a afficher 
         position : Position (x, y) du texte.

@@ -13,11 +13,10 @@ def recuperer_centre_marqueur(corners):
         tuple: Coordonnées (x, y) du centre du marqueur.
     """
 
-  # Extraire le tableau NumPy à partir de la liste ou du tuple
     corners_array = corners[0]  # on prend le premier élément
     pts = corners_array.reshape(-1, 2)  # Transformation en tableau de points [4, 2]
     x = pts[:, 0].mean()  # Moyenne des coordonnées x
     y = pts[:, 1].mean()  # Moyenne des coordonnées y
-    return int(x), int(y)  # Retourner le centre sous forme de tuple (entiers)
+    return int(x), int(y)  # Retourner le centre
 
 
