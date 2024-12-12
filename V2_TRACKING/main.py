@@ -1,12 +1,22 @@
 import time
 import cv2
-import numpy as np  # pour les tableaux
+import numpy as np 
 from camera import initialiser_cam, capture_frame, stop_camera
 from visu import afficher_visu, fermer_visu, dessin_aruco
 from utils import recuperer_centre_marqueur
+from moteur_scs15 import initialiser_servo, envoyer_position, correcteur_p
 
 # Initialisation caméra
 picam2 = initialiser_cam()
+
+# Initialisation UART pour les moteurs
+servo = initialiser_servo()
+id_pitch = 1  # ID du moteur pour le pitch
+id_roll = 2   # ID du moteur pour le roll
+
+# Gains du correcteur P
+gain_pitch = 0.1
+gain_roll = 0.1
 
 # Paramètres ArUco
 aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_100)
@@ -25,7 +35,7 @@ try:
         temps_debut = time.time()
         frame = capture_frame(picam2)
 
-        # Vérification 
+        # Vérification de l'image
         if frame is None or frame.size == 0:
             print("Erreur d'image")
             break
@@ -34,41 +44,62 @@ try:
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
 
-        # Conversion en niveaux de gris
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Détection du marqueur ArUco
         corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
 
         if ids is not None and len(ids) > 0:
             # Marqueur détecté
             print("Marqueur détecté :", ids[0][0])
             pre_id = ids[0][0]  # Sauvegarde de l'ID
-            tracker = None       # Réinitialisation du tracker
-
-            # Obtention du premier marqueur détecté
             corner = corners[0]
-            corner_int = corner.astype(int)           # Coins en entiers
-            x, y, w, h = cv2.boundingRect(corner_int) # Rectangle
-            bbox = (x, y, w, h)                       # Bounding box
-
-            # Création et initialisation du tracker
-            tracker = cv2.legacy.TrackerCSRT_create()
-            tracker.init(frame, bbox)
-
-            # Centre du marqueur
             centre = recuperer_centre_marqueur([corner])
             print("Centre du marqueur :", centre)
 
             # Dessin du marqueur en vert
             frame = dessin_aruco(frame, [corner], ids[:1], color=(0, 255, 0))
+            
+            if centre:
+                # Calcul des erreurs
+                erreur_x = centre[0] - frame.shape[1] // 2  # Erreur horizontale
+                erreur_y = centre[1] - frame.shape[0] // 2  # Erreur verticale
+
+                # Calcul des corrections
+                correction_roll = correcteur_p(erreur_x, gain_roll)
+                correction_pitch = correcteur_p(erreur_y, gain_pitch)
+
+                # Envoi des nouvelles positions aux moteurs
+                envoyer_position(servo, id_roll, 100 + correction_roll)  # Centré à 100
+                envoyer_position(servo, id_pitch, 100 + correction_pitch)
+
+            # Mise à jour du tracker avec le bounding box du marqueur
+            corner_int = corner.astype(int)
+            x, y, w, h = cv2.boundingRect(corner_int)
+            bbox = (x, y, w, h)
+
+            if tracker is None:
+                tracker = cv2.legacy.TrackerCSRT_create()
+                tracker.init(frame, bbox)
+
         elif tracker is not None:
-            # Utilisation du tracking
-            success, bbox = tracker.update(frame)   # Mise à jour du tracker
+            # Suivi du marqueur
+            success, bbox = tracker.update(frame)
             if success:
                 x, y, w, h = bbox
-                # Création des coins à partir du bounding box
                 corner = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=np.float32)
+                centre = ((x + x + w) // 2, (y + y + h) // 2)
+
+                # Calcul des erreurs
+                erreur_x = centre[0] - frame.shape[1] // 2  # Erreur horizontale
+                erreur_y = centre[1] - frame.shape[0] // 2  # Erreur verticale
+
+                # Calcul des corrections
+                correction_roll = correcteur_p(erreur_x, gain_roll)
+                correction_pitch = correcteur_p(erreur_y, gain_pitch)
+
+                # Envoi des nouvelles positions aux moteurs
+                envoyer_position(servo, id_roll, 100 + correction_roll)
+                envoyer_position(servo, id_pitch, 100 + correction_pitch)
 
                 # Dessin du marqueur suivi en rouge
                 frame = dessin_aruco(frame, [corner], np.array([[pre_id]]), color=(0, 0, 255))
@@ -77,10 +108,18 @@ try:
                 # Suivi échoué
                 tracker = None
                 pre_id = None
-                print("Aucun marqueur détecté ou suivi")
+                print("Suivi perdu. Recentrage des moteurs")
+                
+                # Recentrer les moteurs
+                envoyer_position(servo, id_roll, 100)
+                envoyer_position(servo, id_pitch, 100)
         else:
-            # Aucun marqueur détecté ou suivi
-            print("Aucun marqueur détecté ou suivi")
+            # Aucun marqueur détecté ni suivi actif
+            print("Aucun marqueur détecté ou suivi. Recentrez les moteurs.")
+            
+            # Recentrer les moteurs
+            envoyer_position(servo, id_roll, 100)
+            envoyer_position(servo, id_pitch, 100)
 
         # Affichage de la visualisation
         cv2.imshow("Visualisation ArUco", frame)
@@ -94,5 +133,5 @@ try:
             break
 
 finally:
-        stop_camera(picam2)
-        fermer_visu()
+    stop_camera(picam2)
+    fermer_visu()
