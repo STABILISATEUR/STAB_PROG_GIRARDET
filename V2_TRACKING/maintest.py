@@ -12,26 +12,28 @@ from moteur_scs15 import initialiser_servo, envoyer_position, deg_to_pos
 #------------------------------------------------------------------------
 
 # IDs des servos
-ID_SERVO_PITCH = 2
-ID_SERVO_YAW = 1
+ID_SERVO_PITCH = 1
+ID_SERVO_YAW = 2
 
 # Taille du carré ArUco en cm
 ARUCO = 5
 
 # Paramètres du contrôleur PI
 # (Ajustez ces gains si la caméra est très proche, ex. ~20 cm)
-KP_PITCH = 5   # Gain proportionnel pour le Pitch
-KI_PITCH = 0.1   # Gain intégral pour le Pitch
-KP_YAW   = 10   # Gain proportionnel pour le Yaw
-KI_YAW   = 0.2   # Gain intégral pour le Yaw
+KP_PITCH = 1.0   # Gain proportionnel pour le Pitch (ajusté)
+KI_PITCH = 0.2   # Gain intégral pour le Pitch (ajusté)
+KP_YAW   = 15.0  # Gain proportionnel pour le Yaw (ajusté)
+KI_YAW   = 0.05  # Gain intégral pour le Yaw (ajusté)
 
 # Limite de l'intégrale (Anti-Windup)
 INTEGRAL_LIMIT = 20.0
 
 # Angle neutre et limites du servo
 ANGLE_NEUTRE = 100.0
-PITCH_MIN = 55.0
-PITCH_MAX = 145.0
+PITCH_MIN = 10.0   # Limite minimale ajustée
+PITCH_MAX = 190.0  # Limite maximale ajustée
+YAW_MIN = 20.0      # Limite minimale ajustée (si nécessaire)
+YAW_MAX = 180.0     # Limite maximale ajustée (si nécessaire)
 
 # Zone morte (en pixels) pour ignorer de petites erreurs
 ACCEPTANCE_X = 3
@@ -43,6 +45,9 @@ REF_PIXELS = 20
 REF_DISTANCE = 0.5
 MIN_GAIN = 0.1
 MAX_GAIN = 100
+
+# Timeout pour annuler le tracking (en secondes)
+TRACKING_TIMEOUT = 2.0
 
 # Configuration ArUco
 aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_100)
@@ -106,6 +111,10 @@ def main():
     envoyer_position(servo, ID_SERVO_YAW,   pos_init)
     time.sleep(1)
 
+    # Initialisation des angles actuels
+    current_pitch = ANGLE_NEUTRE
+    current_yaw = ANGLE_NEUTRE
+
     # Première capture pour connaître la taille de l'image
     frame = capture_frame(picam2)
     if frame is None or frame.size == 0:
@@ -125,6 +134,12 @@ def main():
     dernier_id_marqueur = None
     marker_perdu_compteur = 0
 
+    # Contrôle de la fréquence des mises à jour
+    dernier_update = time.time()
+
+    # Initialisation du timestamp de la dernière détection
+    last_detection_time = time.time()
+
     try:
         while True:
             frame = capture_frame(picam2)
@@ -142,6 +157,11 @@ def main():
             # Détection ArUco
             gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             coins, ids, _ = cv2.aruco.detectMarkers(gris, aruco_dict, parameters=parameters)
+
+            correction_yaw = 0
+            correction_pitch = 0
+
+            current_time = time.time()
 
             if ids is not None and len(ids) > 0:
                 # On a détecté au moins un marqueur
@@ -167,28 +187,39 @@ def main():
                     erreur_x = float(delta_x) / float(x_image)
                     erreur_y = float(delta_y) / float(y_image)
 
-                    # Mise à jour des contrôleurs PI
-                    correction_yaw   = pi_yaw.update(erreur_x)
-                    correction_pitch = pi_pitch.update(erreur_y)
+                    # Vérifier si 0.2 secondes se sont écoulées depuis la dernière mise à jour
+                    if (current_time - dernier_update) >= 0.2:
+                        # Mise à jour des contrôleurs PI
+                        correction_yaw   = pi_yaw.update(erreur_x)
+                        correction_pitch = pi_pitch.update(erreur_y)
 
-                    # Angles finaux
-                    #
-                    angle_pitch = ANGLE_NEUTRE - correction_pitch
-                    angle_yaw   = ANGLE_NEUTRE + correction_yaw
+                        # Debug des corrections
+                        print(f"[DEBUG] Correction Yaw: {correction_yaw:.3f}, Correction Pitch: {correction_pitch:.3f}")
 
-                    # Limiter le pitch (éviter dépassement du servo)
-                    angle_pitch = np.clip(angle_pitch, PITCH_MIN, PITCH_MAX)
+                        # Mise à jour des angles actuels
+                        # ** Ajustement des signes pour une direction correcte **
+                        # MODIFICATION : Utiliser += au lieu de -= pour cohérence
+                        current_pitch -= correction_pitch  # Augmente pour regarder vers le haut
+                        current_yaw   += correction_yaw    # Augmente pour tourner vers la droite
 
-                    # Debug
-                    print(f"[INFO] ArUco={id_marqueur} | ErX={erreur_x:.3f} ErY={erreur_y:.3f} | "
-                          f"Pitch={angle_pitch:.2f} Yaw={angle_yaw:.2f}")
+                        # Limiter les angles pour éviter le dépassement du servo
+                        current_pitch = np.clip(current_pitch, PITCH_MIN, PITCH_MAX)
+                        current_yaw   = np.clip(current_yaw, YAW_MIN, YAW_MAX)  # Limiter Yaw si nécessaire
 
-                    # Conversion en positions internes et envoi
-                    pos_pitch = deg_to_pos(angle_pitch)
-                    pos_yaw   = deg_to_pos(angle_yaw)
-                    envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
-                    time.sleep(0.5)
-                    envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
+                        # Debug des angles
+                        print(f"[INFO] ArUco={id_marqueur} | ErX={erreur_x:.3f} ErY={erreur_y:.3f} | "
+                              f"Pitch={current_pitch:.2f} Yaw={current_yaw:.2f}")
+
+                        # Conversion en positions internes et envoi
+                        pos_pitch = deg_to_pos(current_pitch)
+                        pos_yaw   = deg_to_pos(current_yaw)
+                        envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
+                        envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
+
+                        dernier_update = current_time  # Mettre à jour le timestamp
+
+                    # Mise à jour du timestamp de la dernière détection
+                    last_detection_time = current_time
 
                     # Affichage visuel : centre de l'image et centre du marqueur
                     dessiner_marqueurs(frame, x_image, y_image)
@@ -199,18 +230,33 @@ def main():
                 zone_suivi = (x_tr, y_tr, w_tr, h_tr)
 
                 if tracker is None:
-                    tracker = cv2.legacy.TrackerCSRT_create()
+                    # Initialisation du tracker KCF
+                    tracker = cv2.TrackerKCF_create()
                     tracker.init(frame, zone_suivi)
                 else:
-                    # Si le tracker existe déjà, on peut le ré-initialiser pour "coller" au nouveau repère
-                    tracker.clear()  # Libère l'ancien tracker
-                    tracker = cv2.legacy.TrackerCSRT_create()
+                    # Ré-initialiser le tracker avec la nouvelle zone_suivi
+                    tracker = cv2.TrackerKCF_create()
                     tracker.init(frame, zone_suivi)
 
                 dernier_id_marqueur = id_marqueur
                 marker_perdu_compteur = 0
 
             else:
+                # Vérifier si le tracking doit être annulé
+                if tracker is not None and (current_time - last_detection_time) > TRACKING_TIMEOUT:
+                    print("[INFO] Timeout atteint. Annulation du tracking.")
+                    tracker = None
+                    dernier_id_marqueur = None
+                    # Réinitialisation des contrôleurs PI et servos
+                    pi_pitch.reset()
+                    pi_yaw.reset()
+                    current_pitch = ANGLE_NEUTRE
+                    current_yaw = ANGLE_NEUTRE
+                    pos_neutre = deg_to_pos(ANGLE_NEUTRE)
+                    envoyer_position(servo, ID_SERVO_PITCH, pos_neutre)
+                    envoyer_position(servo, ID_SERVO_YAW,   pos_neutre)
+                    continue  # Passer à l'itération suivante
+
                 # Marqueur non détecté => tentative de fallback via tracker
                 if tracker is not None:
                     success, zone_suivi = tracker.update(frame)
@@ -231,19 +277,35 @@ def main():
                         erreur_x = float(delta_x) / float(x_image)
                         erreur_y = float(delta_y) / float(y_image)
 
-                        correction_yaw   = pi_yaw.update(erreur_x)
-                        correction_pitch = pi_pitch.update(erreur_y)
+                        # Vérifier si 0.2 secondes se sont écoulées depuis la dernière mise à jour
+                        if (current_time - dernier_update) >= 0.2:
+                            # Mise à jour des contrôleurs PI
+                            correction_yaw   = pi_yaw.update(erreur_x)
+                            correction_pitch = pi_pitch.update(erreur_y)
 
-                        angle_pitch = ANGLE_NEUTRE - correction_pitch
-                        angle_yaw   = ANGLE_NEUTRE + correction_yaw
+                            # Debug des corrections
+                            print(f"[DEBUG] Tracking Correction Yaw: {correction_yaw:.3f}, Correction Pitch: {correction_pitch:.3f}")
 
-                        angle_pitch = np.clip(angle_pitch, PITCH_MIN, PITCH_MAX)
+                            # Mise à jour des angles actuels
+                            # MODIFICATION : Utiliser += au lieu de -= pour cohérence
+                            current_pitch -= correction_pitch  # Augmente pour regarder vers le haut
+                            current_yaw   += correction_yaw    # Augmente pour tourner vers la droite
 
-                        pos_pitch = deg_to_pos(angle_pitch)
-                        pos_yaw   = deg_to_pos(angle_yaw)
-                        envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
-                        time.sleep(0.5)
-                        envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
+                            # Limiter les angles pour éviter le dépassement du servo
+                            current_pitch = np.clip(current_pitch, PITCH_MIN, PITCH_MAX)
+                            current_yaw   = np.clip(current_yaw, YAW_MIN, YAW_MAX)  # Limiter Yaw si nécessaire
+
+                            # Debug des angles
+                            print(f"[INFO] Tracking | ErX={erreur_x:.3f} ErY={erreur_y:.3f} | "
+                                  f"Pitch={current_pitch:.2f} Yaw={current_yaw:.2f}")
+
+                            # Conversion en positions internes et envoi
+                            pos_pitch = deg_to_pos(current_pitch)
+                            pos_yaw   = deg_to_pos(current_yaw)
+                            envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
+                            envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
+
+                            dernier_update = current_time  # Mettre à jour le timestamp
 
                         # Dessin d'un rectangle rouge suivi
                         coin_suivi = np.array([
@@ -256,16 +318,18 @@ def main():
                                              np.array([[dernier_id_marqueur if dernier_id_marqueur else -1]]),
                                              color=(0, 0, 255))
 
-                        # On n'a pas détecté le marqueur, mais le tracker voit "quelque chose"
-                        # On n'incrémente donc pas marker_perdu_compteur trop vite
+                        # Mise à jour du timestamp de la dernière détection
                         marker_perdu_compteur += 1
                     else:
                         # Tracker a échoué
                         marker_perdu_compteur += 1
                         if marker_perdu_compteur > MAX_PERTE:
+                            print("[INFO] Tracker a échoué. Remise à zéro.")
                             # Remise à zéro
                             pi_pitch.reset()
                             pi_yaw.reset()
+                            current_pitch = ANGLE_NEUTRE
+                            current_yaw = ANGLE_NEUTRE
                             pos_neutre = deg_to_pos(ANGLE_NEUTRE)
                             envoyer_position(servo, ID_SERVO_PITCH, pos_neutre)
                             envoyer_position(servo, ID_SERVO_YAW,   pos_neutre)
@@ -278,6 +342,8 @@ def main():
                         # Recadrage
                         pi_pitch.reset()
                         pi_yaw.reset()
+                        current_pitch = ANGLE_NEUTRE
+                        current_yaw = ANGLE_NEUTRE
                         pos_neutre = deg_to_pos(ANGLE_NEUTRE)
                         envoyer_position(servo, ID_SERVO_PITCH, pos_neutre)
                         envoyer_position(servo, ID_SERVO_YAW,   pos_neutre)

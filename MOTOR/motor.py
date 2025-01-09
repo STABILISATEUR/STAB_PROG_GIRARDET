@@ -1,64 +1,89 @@
 import serial
-import time
 
-# Ouvrir le port série (vérifiez que vous avez les permissions, 
-# éventuellement : sudo usermod -a -G dialout pi)
-ser = serial.Serial('/dev/serial0', baudrate=1000000, timeout=0.1)
-
-def write_position(servo_id, position, time_val=0, speed_val=0):
+def initialiser_servo(port="/dev/serial0", baudrate=1000000):
     """
-    Envoie une commande de position au servo SCS15.
-    position : valeur entre 0 et 1023 (0 = 0°, 1023 ~ 200°)
-    time_val : temps (en unité de 11.2 ms selon la doc, ou autre, selon doc)
-    speed_val : vitesse (0 = max)
+    Initialise la connexion série vers le servo SCS15.
+    Renvoie un objet 'serial.Serial'.
+    """
+    return serial.Serial(port, baudrate, timeout=1)
+
+def deg_to_pos(deg):
+    """
+    Convertit un angle (en degrés) dans la plage [0°, 200°] en une position interne [0, 1023].
+    0° correspond à ~0 ticks, 200° correspond à ~1023 ticks.
+    """
+    pos = int((deg / 200.0) * 1023)
+    # On s'assure que la position reste dans [0,1023]
+    if pos < 0:
+        pos = 0
+    elif pos > 1023:
+        pos = 1023
+    return pos
+
+def envoyer_position(servo, servo_id, position, time_val=505, speed_val=505):
+    """
+    Envoie une commande de position au servo SCS15 via le port série 'servo'.
     
-    Le protocole SCS :
-    Packet : 0xFF,0xFF, ID, LENGTH, INSTRUCTION, START_ADDR, PARAMS..., CHECKSUM
-
-    Pour définir la position, le temps, la vitesse :
-    START_ADDR = 0x29
-    PARAMS = [PosH, PosL, TimeH, TimeL, SpeedH, SpeedL]
+    servo     : objet serial.Serial
+    servo_id  : ID unique du servo (entre 1 et 253)
+    position  : valeur entre 0 et 1023 (0 = 0°, 1023 ~ 200°)
+    time_val  : temps (0-1023) pour l'action
+    speed_val : vitesse (0-1023, 0 = vitesse max)
     """
+    # Limitation des valeurs selon la datasheet
+    position = max(0, min(1023, int(position)))
+    time_val = max(0, min(1023, int(time_val)))
+    speed_val = max(0, min(1023, int(speed_val)))
 
-    pos_h = (position >> 8) & 0xFF
-    pos_l = position & 0xFF
-    t_h = (time_val >> 8) & 0xFF
-    t_l = time_val & 0xFF
-    s_h = (speed_val >> 8) & 0xFF
-    s_l = speed_val & 0xFF
+    # Conversion en octets (High puis Low)
+    pos_h, pos_l = (position >> 8) & 0xFF, position & 0xFF
+    t_h, t_l = (time_val >> 8) & 0xFF, time_val & 0xFF
+    s_h, s_l = (speed_val >> 8) & 0xFF, speed_val & 0xFF
 
-    start_addr = 0x29
-    # Instruction write = 0x03
-    # Nombre de paramètres = 6
-    # LENGTH = 1 (pour l'adresse) + 6 (param) + 2 (INSTR + CHK) = 9
+    start_addr = 0x2A  # Adresse de la position cible
+    instruction = 0x03 # Instruction WRITE
+
+    # Le length se calcule comme suit :
+    # length = Nombre d'octets suivant l'ID (instruction, addr, params) + 1 pour le checksum
+    # ici : Instruction(1) + Addr(1) + PosH(1) + PosL(1) + TH(1) + TL(1) + SH(1) + SL(1)
+    # = 8 octets de data + 1 (pour l'instruction length) = 9
     length = 9
 
-    packet = [0xFF, 0xFF, servo_id, length, 0x03, start_addr,
-              pos_h, pos_l, t_h, t_l, s_h, s_l]
+    # Construction du paquet
+    # Format : [0xFF, 0xFF, ID, LENGTH, INSTRUCTION, ADDR, DATA..., CHECKSUM]
+    packet = [
+        0xFF, 0xFF,
+        servo_id,
+        length,
+        instruction,
+        start_addr,
+        pos_h, pos_l,
+        t_h, t_l,
+        s_h, s_l
+    ]
 
     # Calcul du checksum
-    chk = 0
-    for b in packet[2:]:
-        chk += b
-    chk = (~chk) & 0xFF
+    chk = (~sum(packet[2:]) & 0xFF)
     packet.append(chk)
 
-    ser.write(bytearray(packet))
-
+    # Envoi du paquet
+    servo.write(bytearray(packet))
+    
 try:
-    servo_id = 1
-    while True:
-        print("Déplacement à 0°")
-        angle = 0
-        pos = int(angle / 200.0 * 1023)
-        write_position(servo_id, pos, time_val=0, speed_val=1023) # 500 et 0 à adapter
-        time.sleep(2)
+    servo_1_id = 1
+    servo_2_id = 2
 
-        print("Déplacement à 200°")
-        angle = 200
-        pos = int(angle / 200.0 * 1023)
-        write_position(servo_id, pos, time_val=0, speed_val=1023)
-        time.sleep(2)
+    # Exemple de séquence de mouvements
+    print("Servo 1 : Déplacement à 0°")
+    position_100deg = deg_to_pos(100)
+    write_position(servo_1_id, position_100deg, time_val=500, speed_val=500)
+    time.sleep(0.5)
+
+    print("Servo 1 : Déplacement à 45°")
+    position_45deg = deg_to_pos(45)
+    write_position(servo_1_id, position_45deg, time_val=500, speed_val=500)
+    time.sleep(0.5)
+
 
 except KeyboardInterrupt:
     print("Arrêt du programme")
