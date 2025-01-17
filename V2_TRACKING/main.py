@@ -21,8 +21,8 @@ ARUCO = 5
 # Paramètres du contrôleur PI
 KP_PITCH = 1.0   # Gain proportionnel pour le Pitch (ajusté)
 KI_PITCH = 0.2   # Gain intégral pour le Pitch (ajusté)
-KP_YAW   = 15.0  # Gain proportionnel pour le Yaw (ajusté)
-KI_YAW   = 0.05  # Gain intégral pour le Yaw (ajusté)
+KP_YAW   = 2 # Gain proportionnel pour le Yaw (ajusté)
+KI_YAW   = 0.4  # Gain intégral pour le Yaw (ajusté)
 
 # Limite de l'intégrale (Anti-Windup)
 INTEGRAL_LIMIT = 20.0
@@ -46,7 +46,7 @@ MIN_GAIN = 0.1
 MAX_GAIN = 100
 
 # Timeout pour annuler le tracking (en secondes)
-TRACKING_TIMEOUT = 2.0
+TRACKING_TIMEOUT = 5
 
 # Configuration ArUco
 aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_100)
