@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 from camera import initialiser_cam, capture_frame, stop_camera
-from visu import fermer_visu, dessin_aruco, dessiner_marqueurs
+from visu import fermer_visu, dessin_aruco, dessiner_marqueurs, texte_sur_frame  # Ajout de texte_sur_frame
 from utils import recuperer_centre_marqueur
 from moteur_scs15 import initialiser_servo, envoyer_position, deg_to_pos
 
@@ -128,6 +128,13 @@ def main():
     x_image = frame.shape[1] // 2
     y_image = frame.shape[0] // 2
 
+    # Initialisation de l'enregistrement vidéo
+    # ----------------------------------------------------
+    # Définir le codec et créer l'objet VideoWriter
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Vous pouvez choisir un autre codec si nécessaire
+    out = cv2.VideoWriter('visualisation.avi', fourcc, 20.0, (frame.shape[1], frame.shape[0]))
+    # ----------------------------------------------------
+
     # Tracker initialement nul
     tracker = None
     dernier_id_marqueur = None
@@ -215,6 +222,26 @@ def main():
                         envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
                         envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
 
+                        # --------------------------
+                        # Ajout de l'affichage des commandes moteurs
+                        texte_sur_frame(
+                            frame, 
+                            f"Pitch: {current_pitch:.2f}", 
+                            (10, 30),  # Position en haut à gauche
+                            color=(255, 0, 0),  # Bleu
+                            font_scale=0.7, 
+                            thickness=2
+                        )
+                        texte_sur_frame(
+                            frame, 
+                            f"Yaw: {current_yaw:.2f}", 
+                            (10, 60),  # Position en dessous du Pitch
+                            color=(255, 0, 0),  # Bleu
+                            font_scale=0.7, 
+                            thickness=2
+                        )
+                        # --------------------------
+
                         dernier_update = current_time  # Mettre à jour le timestamp
 
                     # Mise à jour du timestamp de la dernière détection
@@ -223,6 +250,19 @@ def main():
                     # Affichage visuel : centre de l'image et centre du marqueur
                     dessiner_marqueurs(frame, x_image, y_image)
                     dessiner_marqueurs(frame, centre[0], centre[1])
+
+                    # --------------------------
+                    # Ajout de l'affichage de l'ID
+                    if centre is not None:
+                        texte_sur_frame(
+                            frame, 
+                            f"ID: {id_marqueur}", 
+                            (centre[0] + 10, centre[1] - 10),  # Position ajustée légèrement par rapport au centre
+                            color=(0, 255, 0),  # Vert
+                            font_scale=0.5, 
+                            thickness=2
+                        )
+                    # --------------------------
 
                 # Mise à jour d'une zone_suivi pour le tracker
                 x_tr, y_tr, w_tr, h_tr = cv2.boundingRect(coin_marqueur.astype(int))
@@ -304,6 +344,26 @@ def main():
                             envoyer_position(servo, ID_SERVO_PITCH, pos_pitch)
                             envoyer_position(servo, ID_SERVO_YAW,   pos_yaw)
 
+                            # --------------------------
+                            # Ajout de l'affichage des commandes moteurs
+                            texte_sur_frame(
+                                frame, 
+                                f"Pitch: {current_pitch:.2f}", 
+                                (10, 30),  # Position en haut à gauche
+                                color=(255, 0, 0),  # Bleu
+                                font_scale=0.7, 
+                                thickness=2
+                            )
+                            texte_sur_frame(
+                                frame, 
+                                f"Yaw: {current_yaw:.2f}", 
+                                (10, 60),  # Position en dessous du Pitch
+                                color=(255, 0, 0),  # Bleu
+                                font_scale=0.7, 
+                                thickness=2
+                            )
+                            # --------------------------
+
                             dernier_update = current_time  # Mettre à jour le timestamp
 
                         # Dessin d'un rectangle rouge suivi
@@ -317,8 +377,22 @@ def main():
                                              np.array([[dernier_id_marqueur if dernier_id_marqueur else -1]]),
                                              color=(0, 0, 255))
 
+                        # --------------------------
+                        # Optionnel : Afficher l'ID même en tracking
+                        if dernier_id_marqueur is not None:
+                            texte_sur_frame(
+                                frame, 
+                                f"ID: {dernier_id_marqueur}", 
+                                (centre_x + 10, centre_y - 10),  # Position ajustée
+                                color=(0, 255, 0),  # Vert
+                                font_scale=0.5, 
+                                thickness=2
+                            )
+                        # --------------------------
+
                         # Mise à jour du timestamp de la dernière détection
                         marker_perdu_compteur += 1
+
                     else:
                         # Tracker a échoué
                         marker_perdu_compteur += 1
@@ -349,16 +423,26 @@ def main():
                         tracker = None
                         dernier_id_marqueur = None
 
+            # --------------------------
+            # Ajout de l'enregistrement du cadre
+            out.write(frame)
+            # --------------------------
+
             # Affichage
-            cv2.imshow("Visualisation ArUco (Pitch/Yaw) + Fallback Tracking", frame)
+            cv2.imshow("Visualisation", frame)
 
             # Sortie si 'q' est pressé
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     finally:
+        # Libération des ressources
         stop_camera(picam2)
         fermer_visu()
+        # --------------------------
+        # Libération de l'enregistrement vidéo
+        out.release()
+        # --------------------------
 
 if __name__ == "__main__":
     main()
